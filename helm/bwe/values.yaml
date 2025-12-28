@@ -1,0 +1,172 @@
+app:
+  
+  #replicaCount: 1
+
+  autoscaling:
+    enabled: true
+    minReplicas: 2
+    maxReplicas: 4
+    targetCPUUtilizationPercentage: 50
+    # targetMemoryUtilizationPercentage: 80
+
+  image:
+    repository: docker.io/library/bwe-api
+    pullPolicy: Never
+    tag: "latest"
+
+  imagePullSecrets: []
+  nameOverride: ""
+  fullNameOverride: ""
+
+  serviceAccount:
+    create: true
+    automount: true
+    annotations: {}
+    name: ""
+
+  podAnnotations: {}
+  podLabels: {}
+
+  podSecurityContext: {}
+
+  securityContext: {}
+
+  service:
+    type: ClusterIP
+    port: 80
+    targetPort: 8000
+
+  ingress:
+    enabled: false
+    className: ""
+    annotations: {}
+    hosts:
+      - host: bwe.local
+        paths:
+          - path: /
+            pathType: Prefix
+    tls: []
+
+  env:
+    APP_ENV: "production"
+    API_HOST: "0.0.0.0"
+    API_PORT: "8000"
+    LOG_LEVEL: "INFO"
+    LLAMA_HOST: "0.0.0.0"
+    LLAMA_PORT: "8080"
+
+  resources: {}
+
+  livenessProbe:
+    httpGet:
+      path: /health
+      port: 8000
+    initialDelaySeconds: 30
+    periodSeconds: 10
+    timeoutSeconds: 5
+    failureThreshold: 3
+
+  readinessProbe:
+    httpGet:
+      path: /health
+      port: 8000
+    initialDelaySeconds: 10
+    periodSeconds: 5
+    timeoutSeconds: 3
+    failureThreshold: 3
+
+  volumes: []
+
+  volumeMounts: []
+
+  nodeSelector: {}
+
+  tolerations: []
+
+  affinity: {}
+
+llamaServer:
+  enabled: true
+  replicaCount: 1
+
+  image:
+    repository: docker.io/library/bwe-llama-server
+    pullPolicy: Never
+    tag: "latest"
+    #repository: ghcr.io/ggml-org/llama.cpp
+    #pullPolicy: IfNotPresent
+    #tag: server-vulkan
+
+
+  imagePullSecrets: []
+
+  storage:
+    modelPath: /data/models
+    readOnly: true
+
+  user:
+    userId: 1001 
+    groupId: 1002
+    #supplementalGroups:
+    #- 988
+    #- 984
+
+  host: "0.0.0.0"
+  port: 8080
+
+  #command: "llama-server"
+  commandArgs:
+    continuousBatching: true
+    numParallelSlots: 4
+    modelFile: Qwen3-30B-A3B-Thinking-2507-Q4_0.gguf
+    mmproj: false
+    #mmprojFile: mmproj-Qwen3VL-30B-A3B-Thinking-Q8_0.gguf
+    contextWindow: 2048
+    #cacheKeyQuantization: f16
+    cacheKeyQuantization: q8_0
+    cacheValueQuantization: q8_0
+    layersInVRAM: 99
+
+  service:
+    type: ClusterIP
+    port: 8080
+
+  podSecurityContext: {}
+
+  podAnnotations: {}
+  podLabels: {}
+
+  livenessProbe:
+    httpGet:
+      path: /health
+      port: 8080
+    initialDelaySeconds: 60
+    periodSeconds: 30
+    timeoutSeconds: 10
+    failureThreshold: 3
+
+  readinessProbe:
+    httpGet:
+      path: /health
+      port: 8080
+    initialDelaySeconds: 120
+    periodSeconds: 10
+    timeoutSeconds: 5
+    failureThreshold: 3
+
+  resources:
+    #requests:
+    #  cpu: "2"
+    #  memory: "8Gi"
+    #  amd.com/gpu: 1
+    limits:
+      #  cpu: "8"
+      #  memory: "32Gi"
+      amd.com/gpu: 1
+
+  nodeSelector: {}
+
+  tolerations: []
+
+  affinity: {}
+

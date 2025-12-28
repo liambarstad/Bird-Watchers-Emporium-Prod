@@ -1,0 +1,7 @@
+apiVersion: v2
+name: bwe
+description: Bird Watchers' Emporium - FastAPI LangGraph Application
+type: application
+version: 0.1.0
+appVersion: "0.1.0"
+

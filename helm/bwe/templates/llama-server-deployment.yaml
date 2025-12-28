@@ -1,0 +1,120 @@
+{{- with .Values.llamaServer }}
+{{- if .enabled }}
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: {{ include "bwe.fullname" $ }}-llama-server
+  labels:
+    {{- include "bwe.labels" $ | nindent 4 }}
+    app.kubernetes.io/component: llama-server
+spec:
+  replicas: {{ .replicaCount }}
+  strategy:
+    type: Recreate
+  selector:
+    matchLabels:
+      {{- include "bwe.selectorLabels" $ | nindent 6 }}
+      app.kubernetes.io/component: llama-server
+  template:
+    metadata:
+      labels:
+        {{- include "bwe.selectorLabels" $ | nindent 8 }}
+        app.kubernetes.io/component: llama-server
+        {{- with .podLabels }}
+        {{- toYaml . | nindent 8 }}
+        {{- end }}
+      {{- with .podAnnotations }}
+      annotations:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+    spec:
+      nodeSelector:
+        amd-gpu: "true"
+      {{- with .imagePullSecrets }}
+      imagePullSecrets:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      containers:
+        - name: llama-server
+          image: "{{ .image.repository }}:{{ .image.tag }}"
+          imagePullPolicy: {{ .image.pullPolicy }}
+          ports:
+            - name: http
+              containerPort: {{ .port }}
+              protocol: TCP
+          securityContext:
+            runAsUser: {{ .user.userId }}
+            runAsGroup: {{ .user.groupId }}
+            fsGroup: {{ .user.groupId }}
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: false
+            #  supplementalGroups: 
+            #  {{- range .user.supplementalGroups }}
+            #  - {{ . }}
+            #  {{- end }}
+            #  privileged: true
+            #  allowPrivilegeEscalation: true
+            #  seccompProfile:
+            #    type: Unconfined
+          args:
+            - --host
+            - "{{ .host }}"
+            - --port
+            - "{{ .port }}"
+            {{- if .commandArgs.continuousBatching }}
+            - -np 
+            - "{{ .commandArgs.numParallelSlots }}"
+            - -cb
+            {{- end }}
+            - --model
+            - "{{ .storage.modelPath }}/{{ .commandArgs.modelFile }}"
+            {{- if .commandArgs.mmproj }}
+            - --mmproj
+            - "{{ .storage.modelPath }}/{{ .commandArgs.mmprojFile }}"
+            {{- end }}
+            - -c
+            - "{{ .commandArgs.contextWindow }}"
+            - -ctk
+            - "{{ .commandArgs.cacheKeyQuantization }}"
+            - -ctv
+            - "{{ .commandArgs.cacheValueQuantization }}"
+            - -ngl
+            - "{{ .commandArgs.layersInVRAM }}"
+          volumeMounts:
+            - name: models
+              mountPath: {{ .storage.modelPath }}
+              readOnly: {{ .storage.readOnly }}
+            - name: gpu-dri
+              mountPath: /dev/dri
+            - name: gpu-kfd
+              mountPath: /dev/kfd
+          livenessProbe:
+            {{- toYaml .livenessProbe | nindent 12 }}
+          readinessProbe:
+            {{- toYaml .readinessProbe | nindent 12 }}
+          resources:
+            {{- toYaml .resources | nindent 12 }}
+      volumes:
+        - name: models
+          hostPath:
+            path: "{{ .storage.modelPath }}"
+        - name: gpu-dri
+          hostPath:
+            path: /dev/dri
+        - name: gpu-kfd
+          hostPath:
+            path: /dev/kfd
+      {{- with .nodeSelector }}
+      nodeSelector:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      {{- with .affinity }}
+      affinity:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      {{- with .tolerations }}
+      tolerations:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+{{- end }}
+{{- end }}
