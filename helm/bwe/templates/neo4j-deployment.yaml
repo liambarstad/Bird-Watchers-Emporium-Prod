@@ -1,0 +1,108 @@
+{{- with .Values.neo4j }}
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: {{ include "bwe.fullname" $ }}-neo4j
+  labels:
+    {{- include "bwe.labels" $ | nindent 4 }}
+    app.kubernetes.io/component: neo4j
+spec:
+  replicas: {{ .replicaCount }}
+  strategy:
+    type: Recreate
+  selector:
+    matchLabels:
+      {{- include "bwe.selectorLabels" $ | nindent 6 }}
+      app.kubernetes.io/component: neo4j
+  template:
+    metadata:
+      labels:
+        {{- include "bwe.selectorLabels" $ | nindent 8 }}
+        app.kubernetes.io/component: neo4j
+        {{- with .podLabels }}
+        {{- toYaml . | nindent 8 }}
+        {{- end }}
+      {{- with .podAnnotations }}
+      annotations:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+    spec:
+      securityContext:
+        fsGroup: {{ .user.groupId }}
+        fsGroupChangePolicy: OnRootMismatch
+      {{- with .imagePullSecrets }}
+      imagePullSecrets:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      initContainers:
+      - name: fix-permissions
+        image: busybox:1.36
+        imagePullPolicy: IfNotPresent
+        command: ["/bin/sh", "-c"]
+        args:
+          - |
+            set -eu
+            echo "Fixing permissions on {{ .storage.dbDir }} ..."
+            chgrp -R {{ .user.groupId }} {{ .storage.dbDir }}
+            chmod 0770 {{ .storage.dbDir }}
+            chmod -R g+rwX {{ .storage.dbDir }}
+            echo "Done. Listing:"
+            ls -ld {{ .storage.dbDir }}
+            ls -lah {{ .storage.dbDir }} | head -n 50
+        securityContext:
+          runAsUser: 0
+          runAsGroup: 0
+          allowPrivilegeEscalation: false
+        volumeMounts:
+          - name: db-dir
+            mountPath: {{ .storage.mountPath | default .storage.dbDir }}
+      containers:
+      - name: neo4j
+        image: "{{ .image.repository }}:{{ .image.tag }}"
+        imagePullPolicy: {{ .image.pullPolicy }}
+        ports:
+          - name: http
+            containerPort: {{ .port }}
+            protocol: TCP
+        securityContext:
+          runAsUser: {{ .user.userId }}
+          runAsGroup: {{ .user.groupId }}
+          allowPrivilegeEscalation: false
+          readOnlyRootFilesystem: false
+        env:
+          - name: UPDATE_FROM_DUMP
+            value: "{{ .env.updateFromDump }}"
+          - name: DUMPFILE_PATH
+            value: "{{ .storage.mountPath | default .storage.dbDir }}/{{ .env.dumpFileName }}"
+          {{- with .extraEnv }}
+          {{- range $key, $value := . }}
+          - name: {{ $key }}
+            value: {{ $value | quote }}
+          {{- end }}
+          {{- end }}
+        volumeMounts:
+          - name: db-dir
+            mountPath: {{ .storage.mountPath | default .storage.dbDir }}
+        livenessProbe:
+          {{- toYaml .livenessProbe | nindent 12 }}
+        readinessProbe:
+          {{- toYaml .readinessProbe | nindent 12 }}
+        resources:
+          {{- toYaml .resources | nindent 12 }}
+      volumes:
+        - name: db-dir
+          hostPath:
+            path: "{{ .storage.hostPath | default .storage.dbDir }}"
+      {{- with .nodeSelector }}
+      nodeSelector:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      {{- with .affinity }}
+      affinity:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      {{- with .tolerations }}
+      tolerations:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+{{- end }}

@@ -30,6 +30,7 @@ ENV/
 .venv
 
 # IDEs
+.cursor/
 .vscode/
 .idea/
 *.swp

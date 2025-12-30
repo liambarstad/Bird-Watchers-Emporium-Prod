@@ -170,3 +170,70 @@ llamaServer:
 
   affinity: {}
 
+neo4j:
+
+  replicaCount: 1
+
+  image:
+    repository: docker.io/library/bwe-neo4j-db
+    pullPolicy: Never
+    tag: "latest"
+
+  port: 7474
+
+  user:
+    userId: 1002
+    groupId: 1003
+
+  env:
+    updateFromDump: 1
+    dumpFileName: 12_03.dump
+    # Not used anymore: Neo4j's Docker entrypoint treats *_FILE env vars as "docker secrets".
+    # Databases are stored under the mounted data directory (see storage.mountPath), not as a single file.
+    # dbFileName: db.db
+
+  # Neo4j memory settings (avoid auto-config overshooting container limits)
+  extraEnv:
+    NEO4J_server_memory_heap_initial__size: "512m"
+    NEO4J_server_memory_heap_max__size: "768m"
+    NEO4J_server_memory_pagecache_size: "768m"
+
+  storage:
+    # **hostPath**: path on the Kubernetes node (your machine in a single-node local cluster)
+    # that contains the dump file and will persist Neo4j data.
+    hostPath: /data/db/neo4j/bwe
+
+    # **mountPath**: path inside the container to mount Neo4j data.
+    # Use Neo4j's standard /data so neo4j-admin and the official entrypoint agree on where the DB lives.
+    mountPath: /data
+
+    # Back-compat: older templates used dbDir; keep it if you still reference it elsewhere.
+    dbDir: /data
+
+  livenessProbe:
+    httpGet:
+      path: /
+      port: 7474
+      scheme: HTTP
+    initialDelaySeconds: 30
+    periodSeconds: 15
+    timeoutSeconds: 5
+    failureThreshold: 5
+
+  readinessProbe:
+    httpGet:
+      path: /
+      port: 7474
+      scheme: HTTP
+    initialDelaySeconds: 10
+    periodSeconds: 10
+    timeoutSeconds: 5
+    failureThreshold: 3
+
+  resources:
+    requests:
+      cpu: "500m"
+      memory: "1Gi"
+    limits:
+      cpu: "1"
+      memory: "2Gi"
