@@ -120,6 +120,7 @@ llamaServer:
     numParallelSlots: 4
     modelFile: Qwen3-30B-A3B-Thinking-2507-Q4_0.gguf
     mmproj: false
+    #chatTemplate: qwen3
     #mmprojFile: mmproj-Qwen3VL-30B-A3B-Thinking-Q8_0.gguf
     contextWindow: 2048
     #cacheKeyQuantization: f16
@@ -180,6 +181,12 @@ neo4j:
     tag: "latest"
 
   port: 7474
+  boltPort: 7687
+
+  service:
+    type: ClusterIP
+    httpPort: 7474
+    boltPort: 7687
 
   user:
     userId: 1002
@@ -188,6 +195,8 @@ neo4j:
   env:
     updateFromDump: 1
     dumpFileName: 12_03.dump
+
+  authSecretName: bwe-neo4j-auth
 
   extraEnv:
     NEO4J_server_memory_heap_initial__size: "512m"

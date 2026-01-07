@@ -72,6 +72,10 @@ spec:
             - --mmproj
             - "{{ .storage.modelPath }}/{{ .commandArgs.mmprojFile }}"
             {{- end }}
+            {{- if .commandArgs.chatTemplate }}
+            - --chat-template
+            - "{{ .commandArgs.chatTemplate }}"
+            {{- end }}
             - -c
             - "{{ .commandArgs.contextWindow }}"
             - -ctk

@@ -1,0 +1,24 @@
+{{- with .Values.neo4j }}
+apiVersion: v1
+kind: Service
+metadata:
+  name: {{ include "bwe.fullname" $ }}-neo4j
+  labels:
+    {{- include "bwe.labels" $ | nindent 4 }}
+    app.kubernetes.io/component: neo4j
+spec:
+  type: {{ .service.type | default "ClusterIP" }}
+  ports:
+    - name: http
+      port: {{ .service.httpPort | default 7474 }}
+      targetPort: http
+      protocol: TCP
+    - name: bolt
+      port: {{ .service.boltPort | default 7687 }}
+      targetPort: bolt
+      protocol: TCP
+  selector:
+    {{- include "bwe.selectorLabels" $ | nindent 4 }}
+    app.kubernetes.io/component: neo4j
+{{- end }}
+

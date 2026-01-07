@@ -64,6 +64,9 @@ spec:
           - name: http
             containerPort: {{ .port }}
             protocol: TCP
+          - name: bolt
+            containerPort: {{ .boltPort | default 7687 }}
+            protocol: TCP
         securityContext:
           runAsUser: {{ .user.userId }}
           runAsGroup: {{ .user.groupId }}
@@ -74,6 +77,11 @@ spec:
             value: "{{ .env.updateFromDump }}"
           - name: DUMPFILE_PATH
             value: "{{ .storage.mountPath | default .storage.dbDir }}/{{ .env.dumpFileName }}"
+          - name: NEO4J_AUTH
+            valueFrom:
+              secretKeyRef:
+                name: "{{ .authSecretName }}"
+                key: NEO4J_AUTH
           {{- with .extraEnv }}
           {{- range $key, $value := . }}
           - name: {{ $key }}

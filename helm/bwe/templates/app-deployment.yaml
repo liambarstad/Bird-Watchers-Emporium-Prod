@@ -49,17 +49,16 @@ spec:
             - name: {{ $key }}
               value: {{ $value | quote }}
             {{- end }}
-            {{- if .secrets }}
-            {{- range .secrets }}
-            {{- range $key, $value := .data }}
-            - name: {{ $key }}
+            - name: NEO4J_USER
               valueFrom:
                 secretKeyRef:
-                  name: {{ $.name }}
-                  key: {{ $key }}
-            {{- end }}
-            {{- end }}
-            {{- end }}
+                  name: {{ $.Values.neo4j.authSecretName }}
+                  key: NEO4J_USER
+            - name: NEO4J_PWD
+              valueFrom:
+                secretKeyRef:
+                  name: {{ $.Values.neo4j.authSecretName }}
+                  key: NEO4J_PWD
           livenessProbe:
             {{- toYaml .livenessProbe | nindent 12 }}
           readinessProbe:
