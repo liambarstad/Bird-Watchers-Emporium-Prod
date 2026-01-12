@@ -54,6 +54,7 @@ app:
     LOG_LEVEL: "INFO"
     LLAMA_HOST: "0.0.0.0"
     LLAMA_PORT: "8080"
+    NEO4J_DATABASE: "neo4j"
 
   resources: {}
 
@@ -163,7 +164,9 @@ llamaServer:
     limits:
       #  cpu: "8"
       #  memory: "32Gi"
-      amd.com/gpu: 1
+      # amd.com/gpu: 1
+      # Consume one "share" advertised by the gpu-share-plugin DaemonSet
+      amd.com/gpu-share: 1
 
   nodeSelector: {}
 
@@ -194,7 +197,7 @@ neo4j:
 
   env:
     updateFromDump: 1
-    dumpFileName: 12_03.dump
+    dumpFileName: 01_07.dump
 
   authSecretName: bwe-neo4j-auth
 
@@ -235,3 +238,23 @@ neo4j:
     limits:
       cpu: "1"
       memory: "2Gi"
+
+# GPU share device plugin (DaemonSet) that advertises `amd.com/gpu-share` resources to kubelet.
+gpuSharePlugin:
+  enabled: true
+
+  image:
+    repository: docker.io/library/amd-gpu-share-plugin
+    tag: "latest"
+    pullPolicy: Never
+
+  shares: 8
+
+  # Nodes where kubelet has access to the AMD GPU device files
+  nodeSelector:
+    amd-gpu: "true"
+
+  tolerations:
+    - operator: Exists
+
+  resources: {}

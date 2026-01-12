@@ -1,0 +1,65 @@
+{{- with .Values.gpuSharePlugin }}
+{{- if .enabled }}
+apiVersion: apps/v1
+kind: DaemonSet
+metadata:
+  name: {{ include "bwe.fullname" $ }}-gpu-share-plugin
+  labels:
+    {{- include "bwe.labels" $ | nindent 4 }}
+    app.kubernetes.io/component: gpu-share-plugin
+spec:
+  selector:
+    matchLabels:
+      {{- include "bwe.selectorLabels" $ | nindent 6 }}
+      app.kubernetes.io/component: gpu-share-plugin
+  template:
+    metadata:
+      labels:
+        {{- include "bwe.selectorLabels" $ | nindent 8 }}
+        app.kubernetes.io/component: gpu-share-plugin
+    spec:
+      {{- with .nodeSelector }}
+      nodeSelector:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      {{- with .tolerations }}
+      tolerations:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      containers:
+        - name: gpu-share-plugin
+          image: "{{ .image.repository }}:{{ .image.tag }}"
+          imagePullPolicy: {{ .image.pullPolicy }}
+          securityContext:
+            privileged: true
+            allowPrivilegeEscalation: true
+            runAsUser: 0
+          env:
+            - name: GPU_SHARES
+              value: {{ .shares | quote }}
+          volumeMounts:
+            - name: device-plugin-dir
+              mountPath: /var/lib/kubelet/device-plugins
+            - name: dev-dri
+              mountPath: /dev/dri
+            - name: dev-kfd
+              mountPath: /dev/kfd
+          resources:
+            {{- toYaml .resources | nindent 12 }}
+      volumes:
+        - name: device-plugin-dir
+          hostPath:
+            path: /var/lib/kubelet/device-plugins
+            type: Directory
+        - name: dev-dri
+          hostPath:
+            path: /dev/dri
+            type: Directory
+        - name: dev-kfd
+          hostPath:
+            path: /dev/kfd
+            type: CharDevice
+{{- end }}
+{{- end }}
+
+

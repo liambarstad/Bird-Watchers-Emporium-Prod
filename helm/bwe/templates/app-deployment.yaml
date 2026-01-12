@@ -49,6 +49,8 @@ spec:
             - name: {{ $key }}
               value: {{ $value | quote }}
             {{- end }}
+            - name: NEO4J_URI
+              value: "bolt://{{ include "bwe.fullname" $ }}-neo4j:{{ $.Values.neo4j.service.boltPort | default 7687 }}"
             - name: NEO4J_USER
               valueFrom:
                 secretKeyRef:
