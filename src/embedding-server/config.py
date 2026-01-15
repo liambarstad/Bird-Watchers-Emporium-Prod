@@ -10,6 +10,7 @@ class Settings(BaseSettings):
     api_version: str = Field(default="0.1.0", alias="API_VERSION")
     api_host: str = Field(default="0.0.0.0", alias="API_HOST")
     api_port: int = Field(default=8090, alias="API_PORT")
+    app_env: str = Field(default="development", alias="APP_ENV")
 
     model_path: str = Field(default="nomic-ai/nomic-embed-multimodal-3b", alias="MODEL_PATH")
     model_device: str = Field(default="cuda", alias="MODEL_DEVICE")

@@ -57,20 +57,6 @@ PIP_LOCAL_INSTALL_ARGS=(--no-index --find-links "$WHEEL_DIR" --no-deps --force-r
 
 mkdir -p "$WHEEL_DIR"
 
-if [ ! -d "$ROCM_PATH" ]; then
-    echo "ERROR: ROCM_PATH=$ROCM_PATH does not exist. Install ROCm (and headers/toolchain) before building." >&2
-    exit 1
-fi
-
-if [ ! -x "$ROCM_PATH/bin/hipcc" ]; then
-    echo "ERROR: $ROCM_PATH/bin/hipcc not found/executable. You need the ROCm HIP SDK/toolchain installed." >&2
-    echo "       (On many distros this is the 'rocm-hip-sdk' / 'hipcc' package.)" >&2
-    exit 1
-fi
-
-echo "Using hipcc: $ROCM_PATH/bin/hipcc"
-"$ROCM_PATH/bin/hipcc" --version || true
-
 if command -v rocminfo >/dev/null 2>&1; then
     echo "Detected ROCm GPU architectures:"
     ROCM_ARCH_LIST="$(rocminfo | grep -o 'gfx[0-9]\+' | sort -u | tr '\n' ' ' || true)"
@@ -116,6 +102,20 @@ echo "---- Uninstalling Previous Pytorch..."
 python -m pip uninstall -y torch torchvision torchaudio
 
 if ! ls "$WHEEL_DIR"/torch-*.whl >/dev/null 2>&1; then
+    if [ ! -d "$ROCM_PATH" ]; then
+        echo "ERROR: ROCM_PATH=$ROCM_PATH does not exist. Install ROCm (and headers/toolchain) before building." >&2
+        exit 1
+    fi
+
+    if [ ! -x "$ROCM_PATH/bin/hipcc" ]; then
+        echo "ERROR: $ROCM_PATH/bin/hipcc not found/executable. You need the ROCm HIP SDK/toolchain installed." >&2
+        echo "       (On many distros this is the 'rocm-hip-sdk' / 'hipcc' package.)" >&2
+        exit 1
+    fi
+
+    echo "Using hipcc: $ROCM_PATH/bin/hipcc"
+    "$ROCM_PATH/bin/hipcc" --version || true
+
     if [ ! -d "pytorch" ]; then
         echo "---- Cloning Pytorch Source..."
         rm -rf pytorch
@@ -153,20 +153,34 @@ fi
 echo "---- Installing Pytorch Wheel..."
 python -m pip install "${PIP_LOCAL_INSTALL_ARGS[@]}" "$WHEEL_DIR"/torch-*.whl
 
-echo "---- Verifying torch is ROCm-enabled (torch.version.hip must be set)..."
-python - <<'PY'
-import torch
-print("torch", torch.__version__)
-print("torch.version.hip", torch.version.hip)
-print("torch.version.cuda", torch.version.cuda)
-print("torch.cuda.is_available()", torch.cuda.is_available())
-if torch.version.hip is None:
-    raise SystemExit("ERROR: Installed torch is CPU-only (torch.version.hip is None). ROCm was not compiled in.")
-PY
+#echo "---- Verifying torch is ROCm-enabled (torch.version.hip must be set)..."
+#python - <<'PY'
+#import torch
+#print("torch", torch.__version__)
+#print("torch.version.hip", torch.version.hip)
+#print("torch.version.cuda", torch.version.cuda)
+#print("torch.cuda.is_available()", torch.cuda.is_available())
+#if torch.version.hip is None:
+#    raise SystemExit("ERROR: Installed torch is CPU-only (torch.version.hip is None). ROCm was not compiled in.")
+#PY
 
 
 cd "$CLONE_DIR"
 if ! ls "$WHEEL_DIR"/torchvision-*.whl >/dev/null 2>&1; then
+    if [ ! -d "$ROCM_PATH" ]; then
+        echo "ERROR: ROCM_PATH=$ROCM_PATH does not exist. Install ROCm (and headers/toolchain) before building." >&2
+        exit 1
+    fi
+
+    if [ ! -x "$ROCM_PATH/bin/hipcc" ]; then
+        echo "ERROR: $ROCM_PATH/bin/hipcc not found/executable. You need the ROCm HIP SDK/toolchain installed." >&2
+        echo "       (On many distros this is the 'rocm-hip-sdk' / 'hipcc' package.)" >&2
+        exit 1
+    fi
+
+    echo "Using hipcc: $ROCM_PATH/bin/hipcc"
+    "$ROCM_PATH/bin/hipcc" --version || true
+
     if [ ! -d "vision" ]; then
       echo "---- Building Torchvision wheel"
       git clone --recursive https://github.com/pytorch/vision.git

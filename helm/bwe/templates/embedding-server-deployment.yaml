@@ -1,0 +1,92 @@
+{{- with .Values.embeddingServer }}
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: {{ include "bwe.fullname" $ }}-embedding-server
+  labels:
+    {{- include "bwe.labels" $ | nindent 4 }}
+    app.kubernetes.io/component: embedding-server
+spec:
+  replicas: {{ .replicaCount }}
+  strategy:
+    type: Recreate
+  selector:
+    matchLabels:
+      {{- include "bwe.selectorLabels" $ | nindent 6 }}
+      app.kubernetes.io/component: embedding-server
+  template:
+    metadata:
+      labels:
+        {{- include "bwe.selectorLabels" $ | nindent 8 }}
+        app.kubernetes.io/component: embedding-server
+        {{- with .podLabels }}
+        {{- toYaml . | nindent 8 }}
+        {{- end }}
+      {{- with .podAnnotations }}
+      annotations:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+    spec:
+      nodeSelector:
+        amd-gpu: "true"
+      {{- with .imagePullSecrets }}
+      imagePullSecrets:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      containers:
+        - name: embedding-server
+          image: "{{ .image.repository }}:{{ .image.tag }}"
+          imagePullPolicy: {{ .image.pullPolicy }}
+          ports:
+            - name: http
+              containerPort: {{ .port }}
+              protocol: TCP
+          env:
+            {{- range $key, $value := .env }}
+            - name: {{ $key }}
+              value: {{ $value | quote }}
+            {{- end }}
+          volumeMounts:
+            - name: rocm
+              mountPath: {{ .rocm.mountPath }}
+              readOnly: {{ .rocm.readOnly }}
+            - name: gpu-dri
+              mountPath: /dev/dri
+            - name: gpu-kfd
+              mountPath: /dev/kfd
+            - name: models
+              mountPath: {{ .models.mountPath }}
+              readOnly: {{ .models.readOnly }}
+          livenessProbe:
+            {{- toYaml .livenessProbe | nindent 12 }}
+          readinessProbe:
+            {{- toYaml .readinessProbe | nindent 12 }}
+          resources:
+            {{- toYaml .resources | nindent 12 }}
+      volumes:
+        - name: rocm
+          hostPath:
+            path: "{{ .rocm.hostPath }}"
+        - name: gpu-dri
+          hostPath:
+            path: /dev/dri
+        - name: gpu-kfd
+          hostPath:
+            path: /dev/kfd
+        - name: models
+          hostPath:
+            path: "{{ .models.hostPath }}"
+      {{- with .nodeSelector }}
+      nodeSelector:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      {{- with .affinity }}
+      affinity:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      {{- with .tolerations }}
+      tolerations:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+{{- end }}
+

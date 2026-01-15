@@ -1,21 +1,21 @@
-FROM archlinux:base
+FROM archlinux:base AS builder
 
 WORKDIR /app
 
-# Install Arch dependencies
+# Install build dependencies (includes ROCm toolchain)
 RUN pacman -Sy --noconfirm archlinux-keyring \
     && pacman -Syu --noconfirm --needed \
       ca-certificates \
       curl \
-      git \
-      base-devel \
-      cmake \
-      ninja \
-      pkgconf \
+      openmp \
       libjpeg-turbo \
       libpng \
       zlib \
-      rocm-hip-sdk
+      numactl \
+      yaml-cpp \
+      fmt \
+      google-glog \
+      libdrm
 
 # Install Python from Arch Linux archive (explicit 3.12.x)
 ARG ARCHIVE_BASE=https://archive.archlinux.org/packages
@@ -30,16 +30,13 @@ RUN curl -fsSL "$ARCHIVE_BASE/p/python/$PYTHON_PKG_NAME" -o /tmp/python.pkg.tar.
 ARG PIP_VERSION=
 ENV PIP_BREAK_SYSTEM_PACKAGES=1
 RUN curl -fsSL https://bootstrap.pypa.io/get-pip.py -o /tmp/get-pip.py \
-    && if [ -n "$PIP_VERSION" ]; then python /tmp/get-pip.py "pip==${PIP_VERSION}" --break-system-packages; else python /tmp/get-pip.py; fi \
+    && if [ -n "$PIP_VERSION" ]; then python /tmp/get-pip.py "pip==${PIP_VERSION}"; else python /tmp/get-pip.py; fi \
     && rm -f /tmp/get-pip.py \
     && python -m pip --version
 
 # Install Python dependencies
 COPY requirements.txt ./requirements.txt
-
 RUN python -m pip install -r requirements.txt
-
-COPY wheels/ /app/wheels/
 
 # Build Pytorch and Torchvision if wheels not present
 ARG PYTORCH_REF="" \
@@ -49,8 +46,24 @@ ARG PYTORCH_REF="" \
     ROCM_PATH=/opt/rocm \
     PYTORCH_ROCM_ARCH=gfx1151 \
     CMAKE_PREFIX_PATH=/opt/rocm
+  
+COPY wheels/ /app/wheels/
 
-RUN chmod +x /app/build-pytorch.sh && /app/build-pytorch.sh
+COPY build-pytorch.sh /app/build-pytorch.sh
+# If the wheels aren't present, install the necessary dependencies and build from source
+RUN set -e; \
+    NEED_BUILD=0; \
+    if ! ls /app/wheels/torch-*.whl >/dev/null 2>&1 || ! ls /app/wheels/torchvision-*.whl >/dev/null 2>&1; then \
+        NEED_BUILD=1; \
+        pacman -Syu --noconfirm --needed base-devel cmake ninja pkgconf git rocm-hip-sdk; \
+    fi; \
+    chmod +x /app/build-pytorch.sh; \
+    /app/build-pytorch.sh; \
+    if [ "$NEED_BUILD" -eq 1 ]; then \
+        pacman -Rns --noconfirm base-devel cmake ninja pkgconf git rocm-hip-sdk; \
+    fi; \
+    rm -rf /app/wheels /tmp/bwe-pytorch-build /root/.cache /var/cache; \
+    pacman -Scc --noconfirm
 
 # Run application
 COPY . .
@@ -61,7 +74,10 @@ ENV PYTHONDONTWRITEBYTECODE=1 \
     API_VERSION="0.1.0" \
     API_HOST="0.0.0.0" \
     API_PORT="8090" \
-    MODEL_ID="nomic-ai/nomic-embed-multimodal-3b"
+    MODEL_ID="nomic-ai/nomic-embed-multimodal-3b" \
+    ROCM_PATH="/opt/rocm" \
+    CMAKE_PREFIX_PATH="/opt/rocm" \
+    LD_LIBRARY_PATH="/opt/rocm/lib:/opt/rocm/lib64"
 
 EXPOSE ${API_PORT}
 

@@ -258,3 +258,69 @@ gpuSharePlugin:
     - operator: Exists
 
   resources: {}
+
+embeddingServer:
+  replicaCount: 1
+
+  image:
+    repository: docker.io/library/bwe-embedding-server
+    pullPolicy: Never
+    tag: "latest"
+
+  imagePullSecrets: []
+
+  port: 8090
+
+  env:
+    API_NAME: "bwe-embedding-server"
+    API_VERSION: "0.1.0"
+    API_HOST: "0.0.0.0"
+    API_PORT: "8090"
+    APP_ENV: "production"
+    MODEL_PATH: "/data/models/nomic-embed-multimodal-3b"
+    MODEL_DEVICE: "cuda"
+
+  rocm:
+    hostPath: /opt/rocm
+    mountPath: /opt/rocm
+    readOnly: true
+
+  models:
+    hostPath: /data/models
+    mountPath: /data/models
+    readOnly: true
+
+  podAnnotations: {}
+  podLabels: {}
+
+  livenessProbe:
+    httpGet:
+      path: /health
+      port: 8090
+    initialDelaySeconds: 60
+    periodSeconds: 30
+    timeoutSeconds: 10
+    failureThreshold: 3
+
+  readinessProbe:
+    httpGet:
+      path: /health
+      port: 8090
+    initialDelaySeconds: 120
+    periodSeconds: 10
+    timeoutSeconds: 5
+    failureThreshold: 3
+
+  resources:
+    limits:
+      amd.com/gpu-share: 1
+
+  service:
+    type: ClusterIP
+    port: 8090
+
+  nodeSelector: {}
+
+  tolerations: []
+
+  affinity: {}
