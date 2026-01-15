@@ -11,8 +11,8 @@ class Settings(BaseSettings):
     api_host: str = Field(default="0.0.0.0", alias="API_HOST")
     api_port: int = Field(default=8090, alias="API_PORT")
 
-    model_id: str = Field(default="nomic-ai/nomic-embed-multimodal-3b", alias="MODEL_ID")
-    model_processor_id: str = Field(default="nomic-ai/nomic-embed-multimodal-3b", alias="MODEL_PROCESSOR_ID")
+    model_path: str = Field(default="nomic-ai/nomic-embed-multimodal-3b", alias="MODEL_PATH")
+    model_device: str = Field(default="cuda", alias="MODEL_DEVICE")
 
     model_config = SettingsConfigDict(
         env_file = ".env",

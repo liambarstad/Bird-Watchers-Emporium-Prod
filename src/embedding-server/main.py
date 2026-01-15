@@ -1,5 +1,7 @@
+import logging
+
 import uvicorn
-from fastapi import FastAPI
+from fastapi import FastAPI, HTTPException
 from pydantic import BaseModel
 
 from config import get_settings
@@ -14,6 +16,8 @@ embedder = Embedder(
     model_device=settings.model_device,
 )
 
+logger = logging.getLogger(__name__)
+
 
 @app.get('/health')
 def health_check() -> dict:
@@ -26,15 +30,31 @@ class EmbedTextRequest(BaseModel):
 
 @app.post('/embed/text')
 def embed_text(request: EmbedTextRequest) -> dict:
+    if not request.texts:
+        raise HTTPException(status_code=400, detail='`texts` must be a non-empty list')
 
+    try:
+        embeddings = embedder.embed_text(request.texts)
+    except Exception as exc:  # pragma: no cover
+        logger.exception('Failed to generate embeddings')
+        raise HTTPException(status_code=500, detail='Failed to generate embeddings') from exc
+
+    return {
+        'embeddings': embeddings,
+        'count': len(embeddings),
+        'model': settings.model_path,
+        'device_type': embedder.model.device.type,
+    }
 
 
 def main() -> None:
+    logger.info(f"Starting {settings.api_name} server on {settings.api_host}:{settings.api_port}")
+
     uvicorn.run(
-        app, 
-        host=settings.api_host, 
-        port=settings.api_port, 
-        log_level='info'
+        app,
+        host=settings.api_host,
+        port=settings.api_port,
+        log_level='info',
     )
 
 

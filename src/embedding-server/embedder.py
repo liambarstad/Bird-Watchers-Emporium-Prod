@@ -12,6 +12,7 @@ class Embedder:
             #attn_implementation='sdpa',
         ).eval()\
             .to(model_device)
+
         self.processor = BiQwen2_5_Processor.from_pretrained(model_path, user_fast=False)
 
     def embed_text(self, queries: list[str]) -> list[list[float]]:
