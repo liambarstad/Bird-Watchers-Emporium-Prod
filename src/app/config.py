@@ -1,31 +1,36 @@
 from functools import lru_cache
 
-from pydantic import Field
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 
 class Settings(BaseSettings):
-    # Application
-    app_env: str = Field(default="development", alias="APP_ENV")
-    api_host: str = Field(default="0.0.0.0", alias="API_HOST")
-    api_port: int = Field(default=8000, alias="API_PORT")
+    app_env: str = 'development'
+    api_host: str = '0.0.0.0'
+    api_port: int = 8000
 
-    app_name: str = Field(default="bwe", alias="APP_NAME")
-    debug: bool = Field(default=False, alias="DEBUG")
-    log_level: str = Field(default="INFO", alias="LOG_LEVEL")
+    app_name: str = 'bwe'
+    debug: bool = False
+    log_level: str = 'INFO'
 
-    llama_host: str = Field(default="0.0.0.0", alias="LLAMA_HOST")
-    llama_port: int = Field(default=8080, alias="LLAMA_PORT")
+    llama_host: str = '0.0.0.0'
+    llama_port: int = 8080
+
+    embedding_host: str = '0.0.0.0'
+    embedding_port: int = 8090
+
+    neo4j_uri: str = 'bolt://localhost:7687'
+    neo4j_user: str
+    neo4j_pwd: str
+    neo4j_database: str
 
     model_config = SettingsConfigDict(
-        env_file = ".env",
-        env_file_encoding = "utf-8",
+        env_file = '.env',
+        env_file_encoding = 'utf-8',
         case_sensitive = False,
     )
 
 
 @lru_cache()
 def get_settings() -> Settings:
-    """Get cached settings instance."""
     return Settings()
 

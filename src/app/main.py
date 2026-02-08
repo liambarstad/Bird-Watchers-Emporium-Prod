@@ -72,7 +72,7 @@ async def query_agent(payload: QueryRequest) -> QueryResponse:
 
 
 def main() -> None:
-    logger.info(f"Starting {settings.app_name} (FastAPI) on {settings.api_host}:{settings.api_port}")
+    logger.info(f"Starting {settings.app_name} server on {settings.api_host}:{settings.api_port}")
 
     uvicorn.run(
         app,

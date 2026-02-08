@@ -52,9 +52,10 @@ app:
     API_HOST: "0.0.0.0"
     API_PORT: "8000"
     LOG_LEVEL: "INFO"
-    LLAMA_HOST: "0.0.0.0"
-    LLAMA_PORT: "8080"
+    # LLAMA_HOST, LLAMA_PORT are set in the llama server deployment template
+    # NEO4J URI, USER, PWD are set in the neo4j deployment template
     NEO4J_DATABASE: "neo4j"
+    # EMBEDDING_HOST, EMBEDDING_PORT are set in the embedding server deployment template
 
   resources: {}
 
@@ -141,7 +142,6 @@ llamaServer:
   livenessProbe:
     httpGet:
       path: /health
-      port: 8080
     initialDelaySeconds: 60
     periodSeconds: 30
     timeoutSeconds: 10
@@ -150,7 +150,6 @@ llamaServer:
   readinessProbe:
     httpGet:
       path: /health
-      port: 8080
     initialDelaySeconds: 120
     periodSeconds: 10
     timeoutSeconds: 5

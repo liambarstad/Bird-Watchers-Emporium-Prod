@@ -93,9 +93,21 @@ spec:
             - name: gpu-kfd
               mountPath: /dev/kfd
           livenessProbe:
-            {{- toYaml .livenessProbe | nindent 12 }}
+            httpGet:
+              path: {{ .livenessProbe.httpGet.path }}
+              port: {{ .port }}
+            initialDelaySeconds: {{ .livenessProbe.initialDelaySeconds }}
+            periodSeconds: {{ .livenessProbe.periodSeconds }}
+            timeoutSeconds: {{ .livenessProbe.timeoutSeconds }}
+            failureThreshold: {{ .livenessProbe.failureThreshold }}
           readinessProbe:
-            {{- toYaml .readinessProbe | nindent 12 }}
+            httpGet:
+              path: {{ .readinessProbe.httpGet.path }}
+              port: {{ .port }}
+            initialDelaySeconds: {{ .readinessProbe.initialDelaySeconds }}
+            periodSeconds: {{ .readinessProbe.periodSeconds }}
+            timeoutSeconds: {{ .readinessProbe.timeoutSeconds }}
+            failureThreshold: {{ .readinessProbe.failureThreshold }}
           resources:
             {{- toYaml .resources | nindent 12 }}
       volumes:

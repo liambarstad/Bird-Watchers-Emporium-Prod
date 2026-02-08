@@ -49,6 +49,10 @@ spec:
             - name: {{ $key }}
               value: {{ $value | quote }}
             {{- end }}
+            - name: LLAMA_HOST
+              value: "{{ include "bwe.fullname" $ }}-llama-server"
+            - name: LLAMA_PORT
+              value: "{{ $.Values.llamaServer.service.port | default 8080 }}"
             - name: NEO4J_URI
               value: "bolt://{{ include "bwe.fullname" $ }}-neo4j:{{ $.Values.neo4j.service.boltPort | default 7687 }}"
             - name: NEO4J_USER
@@ -61,6 +65,10 @@ spec:
                 secretKeyRef:
                   name: {{ $.Values.neo4j.authSecretName }}
                   key: NEO4J_PWD
+            - name: EMBEDDING_HOST
+              value: "{{ include "bwe.fullname" $ }}-embedding-server"
+            - name: EMBEDDING_PORT
+              value: "{{ $.Values.embeddingServer.service.port | default 8090 }}"
           livenessProbe:
             {{- toYaml .livenessProbe | nindent 12 }}
           readinessProbe:
