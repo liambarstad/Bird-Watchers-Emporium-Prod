@@ -1,21 +1,27 @@
 from langchain_core.messages import BaseMessage
 from langgraph.graph import add_messages
-from typing import (
-    TypedDict,
-    Annotated,
-    Sequence,
-    NotRequired,
-)
+from typing import Annotated
+from pydantic import BaseModel, ConfigDict, Field
 
 from utils.neo4j_results import Neo4jResults
 
 
-class BWEState(TypedDict):
+'''class BWEState(TypedDict):
     messages: Annotated[Sequence[list[BaseMessage]], add_messages]
-    final_answer: NotRequired[str]
+    final_answer: NotRequired[str]'''
 
 
-class Neo4jState(TypedDict):
-    step: int
-    messages: Annotated[Sequence[list[BaseMessage]], add_messages]
-    neo4j_results: NotRequired[Neo4jResults]
+class BWEState(BaseModel):
+    model_config = ConfigDict(arbitrary_types_allowed=True)
+    step: int = 0
+    messages: Annotated[list[BaseMessage], add_messages]
+    neo4j_results: Neo4jResults = Field(default_factory=Neo4jResults)
+    final_answer: str = ''
+
+
+class Neo4jState(BaseModel):
+    model_config = ConfigDict(arbitrary_types_allowed=True)
+    step: int = 0
+    messages: Annotated[list[BaseMessage], add_messages]
+    neo4j_results: Neo4jResults = Field(default_factory=Neo4jResults)
+    final_answer: str = '' # take this out

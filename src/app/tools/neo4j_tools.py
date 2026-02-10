@@ -1,13 +1,13 @@
 from typing import (
     Callable,
     Annotated,
-    InjectedState,
 )
 
 from langchain_core.tools import tool
+from langgraph.prebuilt import InjectedState
 from neo4j import Driver
 
-from state import BWEState
+from state import Neo4jState
 from utils.embedding_client import EmbeddingClient
 from utils.neo4j_results import Neo4jQueryStep, ResultIds
 
@@ -17,7 +17,7 @@ FORMAT_BIRD_FACTS_FROM_SCORE_QUERY = '''
 	ORDER BY b, score DESC // order by fact relevance within each bird
 
 	WITH b, collect(DISTINCT {
-		factId: id(f), 
+		factId: elementId(f), 
 		title: f.title, 
 		score: score, 
 		text: f.text
@@ -25,40 +25,29 @@ FORMAT_BIRD_FACTS_FROM_SCORE_QUERY = '''
 
 	WITH b, facts
 	OPTIONAL MATCH (b)-[:HAS_FACT]->(f_extra)
-	WHERE id(f_extra) IN $factIds
-	WITH b, facts + collect(DISTINCT {
-		factId: id(f_extra),
+	WHERE elementId(f_extra) IN $factIds
+	WITH b, facts, collect(DISTINCT {
+		factId: elementId(f_extra),
 		title: f_extra.title,
 		score: null,
 		text: f_extra.text
-	}) AS facts
+	}) AS extraFacts
+	WITH b, facts + extraFacts AS facts
 
 	OPTIONAL MATCH (b)-[:HAS_IMAGE]->(i_extra)
-	WHERE id(i_extra) IN $imageIds
-	WITH DISTINCT b, facts
+	WHERE elementId(i_extra) IN $imageIds
 	WITH b, facts, collect(DISTINCT {
-		imageId: id(i_extra),
+		imageId: elementId(i_extra),
 		url: i_extra.url,
 		score: null
 	}) AS images
 
-	OPTIONAL MATCH (b)-[:IN_CONTINENT]->(c)
-	WITH DISTINCT b, facts, images, collect(DISTINCT c.name) AS continentNames
-	OPTIONAL MATCH (b)-[:IN_COUNTRY]->(co)
-	WITH DISTINCT b, facts, images, continentNames, collect(DISTINCT co.name) AS countryNames
-	OPTIONAL MATCH (b)-[:IN_REGION]->(r)
-	WITH DISTINCT b, facts, images, continentNames, countryNames, collect(DISTINCT r.name) AS regionNames
-	WITH b, facts, images,
-		[name IN continentNames WHERE name IS NOT NULL | {name: name}] AS continents,
-		[name IN countryNames WHERE name IS NOT NULL | {name: name}] AS countries,
-		[name IN regionNames WHERE name IS NOT NULL | {name: name}] AS regions
-
 	WHERE size(facts) > 0 // no birds without facts
-	WITH b, facts, rand() AS r
-	ORDER BY r // order birds randomly
+	WITH b, facts, images, rand() AS rnd
+	ORDER BY rnd // order birds randomly
 
 	WITH collect(DISTINCT {
-		birdId: id(b),
+		birdId: elementId(b),
 		name: b.name,
 		family: b.family,
 		order: b.order,
@@ -66,20 +55,27 @@ FORMAT_BIRD_FACTS_FROM_SCORE_QUERY = '''
 		species: b.species,
 		facts: facts,
 		images: images,
-		continents: continents,
-		countries: countries,
-		regions: regions
+		continents: [ (b)-[:IN_CONTINENT]->(c) | {name: c.name} ],
+		countries: [ (b)-[:IN_COUNTRY]->(co) | {name: co.name} ],
+		regions: [ (b)-[:IN_REGION]->(r) | {name: r.name} ]
 	}) AS birdItems
 
-	UNWIND birdItems AS item
-	UNWIND item.facts AS fact
-	WITH birdItems, collect(DISTINCT fact.factId) AS factIds
-	UNWIND birdItems AS item2
-	UNWIND item2.images AS image
-	WITH birdItems, factIds, collect(DISTINCT image.imageId) AS imageIds
+	WITH
+		birdItems,
+		[item IN birdItems | item.birdId] AS birdIds,
+		reduce(factIds = [], item IN birdItems |
+			reduce(acc = factIds, f IN item.facts |
+				CASE WHEN f.factId IN acc THEN acc ELSE acc + f.factId END
+			)
+		) AS factIds,
+		reduce(imageIds = [], item IN birdItems |
+			reduce(acc = imageIds, i IN item.images |
+				CASE WHEN i.imageId IN acc THEN acc ELSE acc + i.imageId END
+			)
+		) AS imageIds
 
 	RETURN {
-		birdIds: [item IN birdItems | item.birdId],
+		birdIds: birdIds,
 		factIds: factIds,
 		imageIds: imageIds,
 		sample: birdItems[0..$sample_size]
@@ -91,47 +87,36 @@ FORMAT_BIRD_IMAGES_FROM_SCORE_QUERY = '''
 	ORDER BY b, score DESC // order by image relevance within each bird
 
 	WITH b, collect(DISTINCT {
-		imageId: id(i), 
+		imageId: elementId(i), 
 		url: i.url, 
 		score: score
 	}) AS images
 
 	WITH b, images
 	OPTIONAL MATCH (b)-[:HAS_IMAGE]->(i_extra)
-	WHERE id(i_extra) IN $imageIds
-	WITH b, images + collect(DISTINCT {
-		imageId: id(i_extra),
+	WHERE elementId(i_extra) IN $imageIds
+	WITH b, images, collect(DISTINCT {
+		imageId: elementId(i_extra),
 		url: i_extra.url,
 		score: null
-	}) AS images
+	}) AS extraImages
+	WITH b, images + extraImages AS images
 
 	OPTIONAL MATCH (b)-[:HAS_FACT]->(f_extra)
-	WHERE id(f_extra) IN $factIds
-	WITH DISTINCT b, images
+	WHERE elementId(f_extra) IN $factIds
 	WITH b, images, collect(DISTINCT {
-		factId: id(f_extra),
+		factId: elementId(f_extra),
 		title: f_extra.title,
 		score: null,
 		text: f_extra.text
 	}) AS facts
 
-	OPTIONAL MATCH (b)-[:IN_CONTINENT]->(c)
-	WITH DISTINCT b, images, facts, collect(DISTINCT c.name) AS continentNames
-	OPTIONAL MATCH (b)-[:IN_COUNTRY]->(co)
-	WITH DISTINCT b, images, facts, continentNames, collect(DISTINCT co.name) AS countryNames
-	OPTIONAL MATCH (b)-[:IN_REGION]->(r)
-	WITH DISTINCT b, images, facts, continentNames, countryNames, collect(DISTINCT r.name) AS regionNames
-	WITH b, images, facts,
-		[name IN continentNames WHERE name IS NOT NULL | {name: name}] AS continents,
-		[name IN countryNames WHERE name IS NOT NULL | {name: name}] AS countries,
-		[name IN regionNames WHERE name IS NOT NULL | {name: name}] AS regions
-
 	WHERE size(images) > 0 // no birds without images
-	WITH b, images, rand() AS r
-	ORDER BY r // order birds randomly
+	WITH b, images, facts, rand() AS rnd
+	ORDER BY rnd // order birds randomly
 
 	WITH collect(DISTINCT {
-		birdId: id(b),
+		birdId: elementId(b),
 		name: b.name,
 		family: b.family,
 		order: b.order,
@@ -139,22 +124,29 @@ FORMAT_BIRD_IMAGES_FROM_SCORE_QUERY = '''
 		species: b.species,
 		images: images,
 		facts: facts,
-		continents: continents,
-		countries: countries,
-		regions: regions
+		continents: [ (b)-[:IN_CONTINENT]->(c) | {name: c.name} ],
+		countries: [ (b)-[:IN_COUNTRY]->(co) | {name: co.name} ],
+		regions: [ (b)-[:IN_REGION]->(r) | {name: r.name} ]
 	}) AS birdItems
 
-	UNWIND birdItems AS item
-	UNWIND item.images AS image
-	WITH birdItems, collect(DISTINCT image.imageId) AS imageIds
-	UNWIND birdItems AS item2
-	UNWIND item2.facts AS fact
-	WITH birdItems, imageIds, collect(DISTINCT fact.factId) AS factIds
+	WITH
+		birdItems,
+		[item IN birdItems | item.birdId] AS birdIds,
+		reduce(factIds = [], item IN birdItems |
+			reduce(acc = factIds, f IN item.facts |
+				CASE WHEN f.factId IN acc THEN acc ELSE acc + f.factId END
+			)
+		) AS factIds,
+		reduce(imageIds = [], item IN birdItems |
+			reduce(acc = imageIds, i IN item.images |
+				CASE WHEN i.imageId IN acc THEN acc ELSE acc + i.imageId END
+			)
+		) AS imageIds
 
 	RETURN {
-		birdIds: [item IN birdItems | item.birdId],
-		imageIds: imageIds,
+		birdIds: birdIds,
 		factIds: factIds,
+		imageIds: imageIds,
 		sample: birdItems[0..$sample_size]
 	} AS result;
 '''
@@ -164,7 +156,7 @@ FORMAT_BIRD_DETAILS_QUERY = '''
 	OPTIONAL MATCH (b)-[:HAS_FACT]->(f)
 	WITH b, collect(DISTINCT f) AS factNodes
 	WITH b, [f IN factNodes WHERE f IS NOT NULL | {
-		factId: id(f),
+		factId: elementId(f),
 		title: f.title,
 		score: null,
 		text: f.text
@@ -174,24 +166,13 @@ FORMAT_BIRD_DETAILS_QUERY = '''
 	WITH b, facts, collect(DISTINCT i) AS imageNodes
 	WITH DISTINCT b, facts, imageNodes
 	WITH b, facts, [i IN imageNodes WHERE i IS NOT NULL | {
-		imageId: id(i),
+		imageId: elementId(i),
 		url: i.url,
 		score: null
 	}] AS images
 
-	OPTIONAL MATCH (b)-[:IN_CONTINENT]->(c)
-	WITH DISTINCT b, facts, images, collect(DISTINCT c.name) AS continentNames
-	OPTIONAL MATCH (b)-[:IN_COUNTRY]->(co)
-	WITH DISTINCT b, facts, images, continentNames, collect(DISTINCT co.name) AS countryNames
-	OPTIONAL MATCH (b)-[:IN_REGION]->(r)
-	WITH DISTINCT b, facts, images, continentNames, countryNames, collect(DISTINCT r.name) AS regionNames
-	WITH b, facts, images,
-		[name IN continentNames WHERE name IS NOT NULL | {name: name}] AS continents,
-		[name IN countryNames WHERE name IS NOT NULL | {name: name}] AS countries,
-		[name IN regionNames WHERE name IS NOT NULL | {name: name}] AS regions
-
 	WITH collect(DISTINCT {
-		birdId: id(b),
+		birdId: elementId(b),
 		name: b.name,
 		family: b.family,
 		order: b.order,
@@ -199,9 +180,9 @@ FORMAT_BIRD_DETAILS_QUERY = '''
 		species: b.species,
 		facts: facts,
 		images: images,
-		continents: continents,
-		countries: countries,
-		regions: regions
+		continents: [ (b)-[:IN_CONTINENT]->(c) | {name: c.name} ],
+		countries: [ (b)-[:IN_COUNTRY]->(co) | {name: co.name} ],
+		regions: [ (b)-[:IN_REGION]->(r) | {name: r.name} ]
 	}) AS birdItems
 
 	WITH
@@ -235,9 +216,10 @@ def create_lexical_search_tool(
 	@tool
 	def lexical_search(
     	keyword: str, 
-     	state: Annotated[BWEState, InjectedState],
+     	state: Annotated[Neo4jState, InjectedState],
 		sample_size: int = 5,
 		builds_off_previous_step: bool = True,
+		step_description: str = 'Searching by keyword...',
     ):
 		'''
 		Exact keyword search for bird facts in the database.
@@ -245,9 +227,10 @@ def create_lexical_search_tool(
 			keyword: The keyword to search for in the bird facts.
 			sample_size: The number of samples to see complete information for. This will not affect the number of results returned. (defaults to 5)
 			builds_off_previous_step: Whether to filter the previous step's results (True) or start from scratch (False). (defaults to True)
+			step_description: A brief user-facing description of what this step is trying to do.
 		'''
 
-		prev_results = state['neo4j_results']
+		prev_results = state.neo4j_results
 
 		prev_ids = prev_results.steps[-1].result_ids \
 			if prev_results.steps and builds_off_previous_step \
@@ -259,7 +242,7 @@ def create_lexical_search_tool(
 		with neo4j_driver.session(database=db_name) as session:
 			bird_matching_query = '''
 				UNWIND $birdIds AS bid
-				MATCH (b:Bird) WHERE id(b) = bid
+				MATCH (b:Bird) WHERE elementId(b) = bid
 
 				CALL {
 					WITH b
@@ -282,8 +265,8 @@ def create_lexical_search_tool(
 					birdIds=prev_ids.bird_ids,
 					factIds=prev_ids.fact_ids,
 					imageIds=prev_ids.image_ids,
-				)
-			).single()['result']
+				).single()['result']
+			)
 
 			new_step = Neo4jQueryStep(
 				description=f'Keyword search for "{keyword}"',
@@ -295,7 +278,7 @@ def create_lexical_search_tool(
 				result_sample=result['sample']
 			)
 
-			state['neo4j_results'].steps.append(new_step)
+			state.neo4j_results.steps.append(new_step)
 
 			return {
 				'results_count': len(result.get('birdIds', [])),
@@ -315,9 +298,10 @@ def create_semantic_search_tool(
 	@tool
 	def semantic_search(
     	query: str, 
-     	state: Annotated[BWEState, InjectedState],
+     	state: Annotated[Neo4jState, InjectedState],
 		sample_size: int = 5,
 		builds_off_previous_step: bool = True,
+		step_description: str = 'Searching by meaning...',
     ):
 		'''
 		Semantic search for bird facts in the database. Fuzzily matches the query to similar text.
@@ -325,8 +309,9 @@ def create_semantic_search_tool(
 			query: The query to search for in the bird facts.
 			sample_size: The number of samples to see complete information for. This will not affect the number of results returned. (defaults to 5)
 			builds_off_previous_step: Whether to filter the previous step's results (True) or start from scratch (False). (defaults to True)
+			step_description: A brief user-facing description of what this step is trying to do.
 		'''
-		prev_results = state['neo4j_results']
+		prev_results = state.neo4j_results
 
 		prev_ids = prev_results.steps[-1].result_ids \
 			if prev_results.steps and builds_off_previous_step \
@@ -340,7 +325,7 @@ def create_semantic_search_tool(
 		with neo4j_driver.session(database=db_name) as session:
 			bird_matching_query = '''
 				UNWIND $birdIds AS bid
-				MATCH (b:Bird) WHERE id(b) = bid
+				MATCH (b:Bird) WHERE elementId(b) = bid
 
 				CALL {
 					WITH b
@@ -366,8 +351,8 @@ def create_semantic_search_tool(
 					birdIds=prev_ids.bird_ids,
 					factIds=prev_ids.fact_ids,
 					imageIds=prev_ids.image_ids,
-				)
-			).single()['result']
+				).single()['result']
+			)
 
 			new_step = Neo4jQueryStep(
 				description=f'Semantic search for "{query}"',
@@ -379,7 +364,7 @@ def create_semantic_search_tool(
 				result_sample=result['sample']
 			)
 
-			state['neo4j_results'].steps.append(new_step)
+			state.neo4j_results.steps.append(new_step)
 
 			return {
 				'results_count': len(result.get('birdIds', [])),
@@ -399,9 +384,10 @@ def create_visual_search_tool(
 	@tool
 	def visual_search(
      	description: str, 
-      	state: Annotated[BWEState, InjectedState],
+      	state: Annotated[Neo4jState, InjectedState],
 		sample_size: int = 5,
 		builds_off_previous_step: bool = True,
+		step_description: str = 'Searching by visual description...',
     ):
 		'''
 		Search images of birds by their description.
@@ -409,9 +395,10 @@ def create_visual_search_tool(
 			description: The description of the bird to search for.
 			sample_size: The number of samples to see complete information for. This will not affect the number of results returned. (defaults to 5)
 			builds_off_previous_step: Whether to filter the previous step's results (True) or start from scratch (False). (defaults to True)
+			step_description: A brief user-facing description of what this step is trying to do.
 		'''
 
-		prev_results = state['neo4j_results']
+		prev_results = state.neo4j_results
 
 		prev_ids = prev_results.steps[-1].result_ids \
 			if prev_results.steps and builds_off_previous_step \
@@ -425,7 +412,7 @@ def create_visual_search_tool(
 		with neo4j_driver.session(database=db_name) as session:
 			bird_matching_query = '''
 				UNWIND $birdIds AS bid
-				MATCH (b:Bird) WHERE id(b) = bid
+				MATCH (b:Bird) WHERE elementId(b) = bid
 
 				CALL {
 					WITH b
@@ -451,8 +438,8 @@ def create_visual_search_tool(
 					birdIds=prev_ids.bird_ids,
 					factIds=prev_ids.fact_ids,
 					imageIds=prev_ids.image_ids,
-				)
-			).single()['result']
+				).single()['result']
+			)
 
 			new_step = Neo4jQueryStep(
 				description=f'Visual image search for "{description}"',
@@ -464,7 +451,7 @@ def create_visual_search_tool(
 				result_sample=result['sample']
 			)
 
-			state['neo4j_results'].steps.append(new_step)
+			state.neo4j_results.steps.append(new_step)
 
 			return {
 				'results_count': len(result.get('birdIds', [])),
@@ -482,9 +469,10 @@ def create_continent_search_tool(
 	@tool
 	def continent_search(
     	continents: list[str], 
-     	state: Annotated[BWEState, InjectedState],
+     	state: Annotated[Neo4jState, InjectedState],
 		sample_size: int = 5,
 		builds_off_previous_step: bool = True,
+		step_description: str = 'Searching by continent...',
     ):
 		'''
 		Search birds by continent name.
@@ -492,8 +480,9 @@ def create_continent_search_tool(
 			continents: List of continent names to search for.
 			sample_size: The number of samples to see complete information for. This will not affect the number of results returned. (defaults to 5)
 			builds_off_previous_step: Whether to filter the previous step's results (True) or start from scratch (False). (defaults to True)
+			step_description: A brief user-facing description of what this step is trying to do.
 		'''
-		prev_results = state['neo4j_results']
+		prev_results = state.neo4j_results
 
 		prev_ids = prev_results.steps[-1].result_ids \
 			if prev_results.steps and builds_off_previous_step \
@@ -505,7 +494,7 @@ def create_continent_search_tool(
 		with neo4j_driver.session(database=db_name) as session:
 			bird_matching_query = '''
 				UNWIND $birdIds AS bid
-				MATCH (b:Bird) WHERE id(b) = bid
+				MATCH (b:Bird) WHERE elementId(b) = bid
 				MATCH (b)-[:IN_CONTINENT]->(c:Continent)
 				WHERE c.name IN $continents
 			''' if builds_off_previous_step else '''
@@ -518,8 +507,8 @@ def create_continent_search_tool(
 					continents=continents,
 					sample_size=sample_size,
 					birdIds=prev_ids.bird_ids,
-				)
-			).single()['result']
+				).single()['result']
+			)
 
 			new_step = Neo4jQueryStep(
 				description=f'Continent search for {continents}',
@@ -531,7 +520,7 @@ def create_continent_search_tool(
 				result_sample=result['sample']
 			)
 
-			state['neo4j_results'].steps.append(new_step)
+			state.neo4j_results.steps.append(new_step)
 
 			return {
 				'results_count': len(result.get('birdIds', [])),
@@ -549,9 +538,10 @@ def create_country_search_tool(
 	@tool
 	def country_search(
     	countries: list[str], 
-     	state: Annotated[BWEState, InjectedState],
+     	state: Annotated[Neo4jState, InjectedState],
 		sample_size: int = 5,
 		builds_off_previous_step: bool = True,
+		step_description: str = 'Searching by country...',
     ):
 		'''
 		Search birds by country name.
@@ -559,8 +549,9 @@ def create_country_search_tool(
 			countries: List of country names to search for.
 			sample_size: The number of samples to see complete information for. This will not affect the number of results returned. (defaults to 5)
 			builds_off_previous_step: Whether to filter the previous step's results (True) or start from scratch (False). (defaults to True)
+			step_description: A brief user-facing description of what this step is trying to do.
 		'''
-		prev_results = state['neo4j_results']
+		prev_results = state.neo4j_results
 
 		prev_ids = prev_results.steps[-1].result_ids \
 			if prev_results.steps and builds_off_previous_step \
@@ -572,7 +563,7 @@ def create_country_search_tool(
 		with neo4j_driver.session(database=db_name) as session:
 			bird_matching_query = '''
 				UNWIND $birdIds AS bid
-				MATCH (b:Bird) WHERE id(b) = bid
+				MATCH (b:Bird) WHERE elementId(b) = bid
 				MATCH (b)-[:IN_COUNTRY]->(c:Country)
 				WHERE c.name IN $countries
 			''' if builds_off_previous_step else '''
@@ -585,8 +576,8 @@ def create_country_search_tool(
 					countries=countries,
 					sample_size=sample_size,
 					birdIds=prev_ids.bird_ids,
-				)
-			).single()['result']
+				).single()['result']
+			)
 
 			new_step = Neo4jQueryStep(
 				description=f'Country search for {countries}',
@@ -598,7 +589,7 @@ def create_country_search_tool(
 				result_sample=result['sample']
 			)
 
-			state['neo4j_results'].steps.append(new_step)
+			state.neo4j_results.steps.append(new_step)
 
 			return {
 				'results_count': len(result.get('birdIds', [])),
@@ -616,9 +607,10 @@ def create_region_search_tool(
 	@tool
 	def region_search(
     	regions: list[str], 
-     	state: Annotated[BWEState, InjectedState],
+     	state: Annotated[Neo4jState, InjectedState],
 		sample_size: int = 5,
 		builds_off_previous_step: bool = True,
+		step_description: str = 'Searching by region...',
     ):
 		'''
 		Search birds by region name.
@@ -626,8 +618,9 @@ def create_region_search_tool(
 			regions: List of region names to search for.
 			sample_size: The number of samples to see complete information for. This will not affect the number of results returned. (defaults to 5)
 			builds_off_previous_step: Whether to filter the previous step's results (True) or start from scratch (False). (defaults to True)
+			step_description: A brief user-facing description of what this step is trying to do.
 		'''
-		prev_results = state['neo4j_results']
+		prev_results = state.neo4j_results
 
 		prev_ids = prev_results.steps[-1].result_ids \
 			if prev_results.steps and builds_off_previous_step \
@@ -639,7 +632,7 @@ def create_region_search_tool(
 		with neo4j_driver.session(database=db_name) as session:
 			bird_matching_query = '''
 				UNWIND $birdIds AS bid
-				MATCH (b:Bird) WHERE id(b) = bid
+				MATCH (b:Bird) WHERE elementId(b) = bid
 				MATCH (b)-[:IN_REGION]->(r:Region)
 				WHERE r.name IN $regions
 			''' if builds_off_previous_step else '''
@@ -652,8 +645,8 @@ def create_region_search_tool(
 					regions=regions,
 					sample_size=sample_size,
 					birdIds=prev_ids.bird_ids,
-				)
-			).single()['result']
+				).single()['result']
+			)
 
 			new_step = Neo4jQueryStep(
 				description=f'Region search for {regions}',
@@ -665,7 +658,7 @@ def create_region_search_tool(
 				result_sample=result['sample']
 			)
 
-			state['neo4j_results'].steps.append(new_step)
+			state.neo4j_results.steps.append(new_step)
 
 			return {
 				'results_count': len(result.get('birdIds', [])),

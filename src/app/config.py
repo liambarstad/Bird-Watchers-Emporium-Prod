@@ -14,6 +14,7 @@ class Settings(BaseSettings):
 
     llama_host: str = '0.0.0.0'
     llama_port: int = 8080
+    llama_model: str
 
     embedding_host: str = '0.0.0.0'
     embedding_port: int = 8090

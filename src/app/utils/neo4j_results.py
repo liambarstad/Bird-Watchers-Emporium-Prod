@@ -48,9 +48,9 @@ class BirdResult(BaseModel):
 
 
 class ResultIds(BaseModel):
-    bird_ids: list[int] = Field(default_factory=list)
-    fact_ids: list[int] = Field(default_factory=list)
-    image_ids: list[int] = Field(default_factory=list)
+    bird_ids: list[str] = Field(default_factory=list)
+    fact_ids: list[str] = Field(default_factory=list)
+    image_ids: list[str] = Field(default_factory=list)
 
 
 class Neo4jQueryStep(BaseModel):

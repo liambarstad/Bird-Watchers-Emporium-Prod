@@ -52,6 +52,7 @@ app:
     API_HOST: "0.0.0.0"
     API_PORT: "8000"
     LOG_LEVEL: "INFO"
+    LLAMA_MODEL: "qwen3:30b"
     # LLAMA_HOST, LLAMA_PORT are set in the llama server deployment template
     # NEO4J URI, USER, PWD are set in the neo4j deployment template
     NEO4J_DATABASE: "neo4j"
@@ -119,12 +120,12 @@ llamaServer:
   #command: "llama-server"
   commandArgs:
     continuousBatching: true
-    numParallelSlots: 4
+    numParallelSlots: 2
     modelFile: Qwen3-30B-A3B-Thinking-2507-Q4_0.gguf
     mmproj: false
     #chatTemplate: qwen3
     #mmprojFile: mmproj-Qwen3VL-30B-A3B-Thinking-Q8_0.gguf
-    contextWindow: 2048
+    contextWindow: 4096
     #cacheKeyQuantization: f16
     cacheKeyQuantization: q8_0
     cacheValueQuantization: q8_0
