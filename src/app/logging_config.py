@@ -44,11 +44,15 @@ def configure_logging(settings: Settings) -> None:
     root_logger.handlers = [handler]
     root_logger.setLevel(log_level)
 
-    for logger_name in ("uvicorn", "uvicorn.error", "uvicorn.access"):
+    for logger_name in ('uvicorn', 'uvicorn.error', 'uvicorn.access'):
         uvicorn_logger = logging.getLogger(logger_name)
         uvicorn_logger.handlers = [handler]
         uvicorn_logger.setLevel(log_level)
         uvicorn_logger.propagate = False
+
+    for logger_name in ('httpx', 'httpcore'):
+        client_logger = logging.getLogger(logger_name)
+        client_logger.setLevel(logging.WARNING)
 
     structlog.configure(
         processors=[

@@ -19,6 +19,6 @@ class EmbeddingClient:
         )
         response.raise_for_status()
         data = response.json()
-        embeddings = data.get(['embeddings'], [])
+        embeddings = data.get('embeddings', [])
         return embeddings
 

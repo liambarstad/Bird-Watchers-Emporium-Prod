@@ -19,7 +19,8 @@ class Settings(BaseSettings):
     embedding_host: str = '0.0.0.0'
     embedding_port: int = 8090
 
-    neo4j_uri: str = 'bolt://localhost:7687'
+    # Use IPv4 loopback by default to avoid environments where `localhost` resolves to IPv6 first.
+    neo4j_uri: str = 'bolt://127.0.0.1:7687'
     neo4j_user: str
     neo4j_pwd: str
     neo4j_database: str

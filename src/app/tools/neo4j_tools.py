@@ -1,10 +1,12 @@
 from typing import (
     Callable,
     Annotated,
+    Literal,
 )
 
 from langchain_core.tools import tool
 from langgraph.prebuilt import InjectedState
+from langgraph.types import Command
 from neo4j import Driver
 
 from state import Neo4jState
@@ -280,10 +282,13 @@ def create_lexical_search_tool(
 
 			state.neo4j_results.steps.append(new_step)
 
-			return {
-				'results_count': len(result.get('birdIds', [])),
-				'sample': result['sample']
-			}
+			return Command(
+				update={'neo4j_results': state.neo4j_results},
+				output=str({
+					'results_count': len(result.get('birdIds', [])),
+					'sample': result['sample']
+				})
+			)
 
 	return lexical_search
 
@@ -299,15 +304,19 @@ def create_semantic_search_tool(
 	def semantic_search(
     	query: str, 
      	state: Annotated[Neo4jState, InjectedState],
+		k: int = 50,
 		sample_size: int = 5,
+		similarity: Literal["low", "medium", "high"] = "medium",
 		builds_off_previous_step: bool = True,
 		step_description: str = 'Searching by meaning...',
     ):
 		'''
-		Semantic search for bird facts in the database. Fuzzily matches the query to similar text.
+		Semantic search for bird facts using the Neo4j vector index (top-k nearest neighbors).
 		Args:
 			query: The query to search for in the bird facts.
+			k: The maximum number of nearest-neighbor facts to retrieve from the vector index. (defaults to 50)
 			sample_size: The number of samples to see complete information for. This will not affect the number of results returned. (defaults to 5)
+			similarity: How similar the fact text must be to the query, with options "low", "medium", or "high" similarity. (defaults to "medium")
 			builds_off_previous_step: Whether to filter the previous step's results (True) or start from scratch (False). (defaults to True)
 			step_description: A brief user-facing description of what this step is trying to do.
 		'''
@@ -321,31 +330,29 @@ def create_semantic_search_tool(
 			builds_off_previous_step = False
 
 		embeddings = embedding_client.embed_texts([query])
+		
+		thresholds = {'low': 0.25, 'medium': 0.45, 'high': 0.65}
+		min_score = thresholds.get(similarity, 0.45)
 
 		with neo4j_driver.session(database=db_name) as session:
 			bird_matching_query = '''
-				UNWIND $birdIds AS bid
-				MATCH (b:Bird) WHERE elementId(b) = bid
-
-				CALL {
-					WITH b
-					CALL db.index.vector.queryNodes("facts_embedding_idx", $embeddings)
-					YIELD node AS f, score
-					WHERE score >= $min_score
-					MATCH (b)-[:HAS_FACT]->(f)
-					RETURN b, f, score
-				}
-			''' if builds_off_previous_step else '''
-				CALL db.index.vector.queryNodes("facts_embedding_idx", $embeddings)
-				YIELD node as f, score
+				CALL db.index.vector.queryNodes("facts_embedding_idx", $k, $embedding)
+				YIELD node AS f, score
 				WHERE score >= $min_score
-				ORDER BY score DESC
+				MATCH (b:Bird)-[:HAS_FACT]->(f)
+				WHERE elementId(b) IN $birdIds
+				RETURN b, f, score
+			''' if builds_off_previous_step else '''
+				CALL db.index.vector.queryNodes("facts_embedding_idx", $k, $embedding)
+				YIELD node AS f, score
+				WHERE score >= $min_score
 				MATCH (b:Bird)-[:HAS_FACT]->(f)
 			'''
 
 			result = session.execute_read(
 				lambda tx: tx.run(bird_matching_query + FORMAT_BIRD_FACTS_FROM_SCORE_QUERY,
-					embeddings=embeddings,
+					embedding=embeddings[0],
+					k=k,
 					sample_size=sample_size,
 					min_score=min_score,
 					birdIds=prev_ids.bird_ids,
@@ -366,10 +373,13 @@ def create_semantic_search_tool(
 
 			state.neo4j_results.steps.append(new_step)
 
-			return {
-				'results_count': len(result.get('birdIds', [])),
-				'sample': result['sample']
-			}
+			return Command(
+				update={'neo4j_results': state.neo4j_results},
+				output=str({
+					'results_count': len(result.get('birdIds', [])),
+					'sample': result['sample']
+				})
+			)
 
 	return semantic_search
 
@@ -385,15 +395,19 @@ def create_visual_search_tool(
 	def visual_search(
      	description: str, 
       	state: Annotated[Neo4jState, InjectedState],
+		k: int = 50,
 		sample_size: int = 5,
+		similarity: Literal["low", "medium", "high"] = "medium",
 		builds_off_previous_step: bool = True,
 		step_description: str = 'Searching by visual description...',
     ):
 		'''
-		Search images of birds by their description.
+		Search bird images by description using the Neo4j vector index (top-k nearest neighbors).
 		Args:
 			description: The description of the bird to search for.
+			k: The maximum number of nearest-neighbor images to retrieve from the vector index. (defaults to 50)
 			sample_size: The number of samples to see complete information for. This will not affect the number of results returned. (defaults to 5)
+			similarity: How similar the image must be to the description, with options "low", "medium", or "high" similarity. (defaults to "medium")
 			builds_off_previous_step: Whether to filter the previous step's results (True) or start from scratch (False). (defaults to True)
 			step_description: A brief user-facing description of what this step is trying to do.
 		'''
@@ -409,30 +423,28 @@ def create_visual_search_tool(
 
 		embeddings = embedding_client.embed_texts([description])
 		
+		thresholds = {'low': 0.25, 'medium': 0.45, 'high': 0.65}
+		min_score = thresholds.get(similarity, 0.45)
+
 		with neo4j_driver.session(database=db_name) as session:
 			bird_matching_query = '''
-				UNWIND $birdIds AS bid
-				MATCH (b:Bird) WHERE elementId(b) = bid
-
-				CALL {
-					WITH b
-					CALL db.index.vector.queryNodes("image_embedding_idx", $embeddings)
-					YIELD node AS i, score
-					WHERE score >= $min_score
-					MATCH (b)-[:HAS_IMAGE]->(i)
-					RETURN b, i, score
-				}
-			''' if builds_off_previous_step else '''
-				CALL db.index.vector.queryNodes("image_embedding_idx", $embeddings)
-				YIELD node as i, score
+				CALL db.index.vector.queryNodes("image_embedding_idx", $k, $embedding)
+				YIELD node AS i, score
 				WHERE score >= $min_score
-				ORDER BY score DESC
+				MATCH (b:Bird)-[:HAS_IMAGE]->(i)
+				WHERE elementId(b) IN $birdIds
+				RETURN b, i, score
+			''' if builds_off_previous_step else '''
+				CALL db.index.vector.queryNodes("image_embedding_idx", $k, $embedding)
+				YIELD node AS i, score
+				WHERE score >= $min_score
 				MATCH (b:Bird)-[:HAS_IMAGE]->(i)
 			'''
 
 			result = session.execute_read(
 				lambda tx: tx.run(bird_matching_query + FORMAT_BIRD_IMAGES_FROM_SCORE_QUERY,
-					embeddings=embeddings,
+					embedding=embeddings[0],
+					k=k,
 					sample_size=sample_size,
 					min_score=min_score,
 					birdIds=prev_ids.bird_ids,
@@ -453,10 +465,13 @@ def create_visual_search_tool(
 
 			state.neo4j_results.steps.append(new_step)
 
-			return {
-				'results_count': len(result.get('birdIds', [])),
-				'sample': result['sample']
-			}
+			return Command(
+				update={'neo4j_results': state.neo4j_results},
+				output=str({
+					'results_count': len(result.get('birdIds', [])),
+					'sample': result['sample']
+				})
+			)
 
 	return visual_search
 
@@ -522,10 +537,13 @@ def create_continent_search_tool(
 
 			state.neo4j_results.steps.append(new_step)
 
-			return {
-				'results_count': len(result.get('birdIds', [])),
-				'sample': result['sample']
-			}
+			return Command(
+				update={'neo4j_results': state.neo4j_results},
+				output=str({
+					'results_count': len(result.get('birdIds', [])),
+					'sample': result['sample']
+				})
+			)
 
 	return continent_search
 
@@ -591,10 +609,13 @@ def create_country_search_tool(
 
 			state.neo4j_results.steps.append(new_step)
 
-			return {
-				'results_count': len(result.get('birdIds', [])),
-				'sample': result['sample']
-			}
+			return Command(
+				update={'neo4j_results': state.neo4j_results},
+				output=str({
+					'results_count': len(result.get('birdIds', [])),
+					'sample': result['sample']
+				})
+			)
 
 	return country_search
 
@@ -660,10 +681,13 @@ def create_region_search_tool(
 
 			state.neo4j_results.steps.append(new_step)
 
-			return {
-				'results_count': len(result.get('birdIds', [])),
-				'sample': result['sample']
-			}
+			return Command(
+				update={'neo4j_results': state.neo4j_results},
+				output=str({
+					'results_count': len(result.get('birdIds', [])),
+					'sample': result['sample']
+				})
+			)
 
 	return region_search
 

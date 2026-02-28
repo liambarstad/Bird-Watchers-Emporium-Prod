@@ -1,5 +1,6 @@
 import json
 from typing import AsyncGenerator
+import asyncio
 import uvicorn
 from fastapi import FastAPI, Depends
 from fastapi.responses import StreamingResponse
@@ -35,6 +36,15 @@ class QueryRequest(BaseModel):
     conversation: list[Message]
 
 
+def return_step_message(message: str, event: dict) -> str:
+    data = event.get('data', {})
+    run_id = event.get('run_id')
+    name = event.get('name')
+
+    logger.info('-- Return step message --', data=data, run_id=run_id, name=name, message=message)
+    yield json.dumps({'status_message': message}) + '\n'
+
+
 @app.post('/query')
 async def query_agent(
     request: QueryRequest,
@@ -51,68 +61,41 @@ async def query_agent(
 
     async def _graph_event_generator() -> AsyncGenerator[str, None]:
         try:
-            async for event in bwe_agent.astream_events(initial_state, version='v1'):
-
-                data = event.get('data', {})
-                run_id = event.get('run_id')
-                name = event.get('name')
-
+            async for event in bwe_agent.astream_events(initial_state, version='v2'):
                 match event.get('event'):
 
                     case 'on_chain_start':
-                        if name == 'LangGraph':
-                            logger.info('Request started', 
-                                run_id=run_id,
-                                starting_state=data.get('initial_state'),
-                                event_payload=event
-                            )
-                            yield json.dumps({'status_message': 'Querying agent...'}) + '\n'
-
-                    case 'on_chat_model_stream':
-                        content = data['chunk'].content
-                        if content:
-                            logger.info('Streaming step', 
-                                run_id=data.get('run_id'), 
-                                step=content,
-                                event_payload=event
-                            )
-                            yield json.dumps({'content': content}) + '\n'
+                        return_step_message('Querying agent...', event)
 
                     case 'on_tool_start':
-                        if name:
-                            tool_input = data.get('input', {})
-                            msg = tool_input.get('step_description') or f'Running tool: {name}...'
-                            
-                            logger.info('Tool start', run_id=run_id, tool=name)
-                            yield json.dumps({'status_message': msg}) + '\n'
+                        tool_step_description = (event.get('data', {})\
+                            .get('input', {})\
+                            .get('step_description') \
+                            or 'Running tool') + '...'
+
+                        return_step_message(tool_step_description, event)
 
                     case 'on_tool_end':
-                        output = data.get('output')
-                        # Sometimes output is a dict, sometimes it might be just the value or a tool message
-                        # We specifically want to look for our structured output from the neo4j tools
-                        if isinstance(output, dict) and 'results_count' in output:
-                            count = output['results_count']
-                            yield json.dumps({'status_message': f'Found {count} results.'}) + '\n'
-                        elif output:
-                             # Fallback logging to debug what output we actually get
-                             logger.info('Tool end output', output=str(output)[:200])
+                        return_step_message('Output from tool received', event)
 
                     case 'on_chain_end':
-                        # In v1, on_graph_end might not fire reliably for the top-level graph if it's nested
-                        # Check if this is the top-level chain ending
-                        if name == 'LangGraph':
-                             yield json.dumps({'complete': True}) + '\n'
+                        output = event.get('data', {}).get('output')
+                        if isinstance(output, dict):
+                            final_answer = output.get('final_answer')
+                            yield json.dumps({'complete': True, 'final_answer': final_answer}) + '\n'
 
                     case 'on_error':
+                        data = event.get('data', {})
                         logger.error('Request error', 
                             run_id=data.get('run_id'),
-                            error=data.get('error'),
-                            event_payload=event
+                            error=data.get('error')
                         )
                         yield json.dumps({'error': True, 'status_message': 'Error during agent execution.'}) + '\n'
 
         
         except Exception as e:
+            if settings.debug:
+                raise e
             error_msg = f"{type(e).__name__}: {str(e)}"
             logger.error('Unexpected error', error=error_msg)
             yield json.dumps({'error': True, 'status_message': f'Unexpected error.'}) + '\n'
@@ -124,14 +107,28 @@ async def query_agent(
     )
 
 
+def handle_exception(loop, context):
+    msg = context.get("exception", context["message"])
+    logger.error(f"Task exception: {str(msg)}")
+
+
 def main() -> None:
     logger.info(f"Starting {settings.app_name} server on {settings.api_host}:{settings.api_port}")
 
-    uvicorn.run(
+    loop = asyncio.new_event_loop()
+    asyncio.set_event_loop(loop)
+    
+    if not settings.debug:
+        loop.set_exception_handler(handle_exception)
+
+    config = uvicorn.Config(
         app,
         host=settings.api_host,
-        port=settings.api_port
+        port=settings.api_port,
+        loop="asyncio" 
     )
+    server = uvicorn.Server(config)
+    loop.run_until_complete(server.serve())
 
 
 if __name__ == "__main__":

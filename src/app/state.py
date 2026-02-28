@@ -6,22 +6,19 @@ from pydantic import BaseModel, ConfigDict, Field
 from utils.neo4j_results import Neo4jResults
 
 
-'''class BWEState(TypedDict):
-    messages: Annotated[Sequence[list[BaseMessage]], add_messages]
-    final_answer: NotRequired[str]'''
-
-
 class BWEState(BaseModel):
     model_config = ConfigDict(arbitrary_types_allowed=True)
+
     step: int = 0
-    messages: Annotated[list[BaseMessage], add_messages]
-    neo4j_results: Neo4jResults = Field(default_factory=Neo4jResults)
+    messages: list[BaseMessage]
+    reasoning_steps: Annotated[list[BaseMessage], add_messages] = []
     final_answer: str = ''
+    neo4j_results: dict[str, Neo4jResults] = {}
 
 
 class Neo4jState(BaseModel):
     model_config = ConfigDict(arbitrary_types_allowed=True)
+
     step: int = 0
     messages: Annotated[list[BaseMessage], add_messages]
-    neo4j_results: Neo4jResults = Field(default_factory=Neo4jResults)
-    final_answer: str = '' # take this out
+    neo4j_results: Neo4jResults = None

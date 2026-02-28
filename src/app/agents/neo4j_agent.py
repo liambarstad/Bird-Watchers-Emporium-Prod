@@ -22,6 +22,7 @@ def build_neo4j_agent() -> CompiledStateGraph:
         api_key='local-llama',
         model=settings.llama_model,
         temperature=0.2,
+        streaming=False,
     )
 
     neo4j_driver = GraphDatabase.driver(

@@ -71,7 +71,11 @@ class Neo4jResults(BaseModel):
         ]
 
     def num_results(self) -> int:
+        if not self.steps:
+            return 0
         return len(self.steps[-1].result_ids.bird_ids)
 
     def sample(self) -> list[BirdResult]:
+        if not self.steps:
+            return []
         return self.steps[-1].result_sample
